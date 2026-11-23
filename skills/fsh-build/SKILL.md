@@ -19,12 +19,17 @@ File names stay as SUSHI writes them, for example `StructureDefinition-mz-Caries
 
 The FSH is the source. The JSON in the repository folders is output, not a reference: it can be stale, incomplete or produced in a way nobody can repeat. When the build and the committed JSON disagree, or when the committed state cannot be built at all, report that as a finding. Do not explain it away as a problem of your own environment, and do not assume the committed JSON is right.
 
-The two scripts below are in the `scripts/` folder next to this file. They need Node.js only; the validator also needs Java 17 or later. They work the same on Windows and macOS.
+The scripts below are in the `scripts/` folder next to this file. They need Node.js only; the validator also needs Java 17 or later. They work the same on Windows and macOS.
 
 ## Before you start
 
 1. Find the repository root: the folder that contains `fsh/sushi-config.yaml`.
 2. Check the branch with `git branch --show-current`. Work happens on a version branch (such as `1.0.0-rc.3`) or a ticket branch (such as `DOSINZAGE1-123`). If the branch is `main`, stop and ask; `main` is protected.
+3. Run `node <this skill>/scripts/check-repo.mjs --repo <repository root>`. It changes nothing and reports:
+   - each dependency package from `fsh/sushi-config.yaml`, and the packages those depend on, with the StructureDefinitions that have no snapshot. SUSHI cannot build anything that derives from those.
+   - `package.json`, which Simplifier uses, against the repository: dependencies that differ from `fsh/sushi-config.yaml`, a different FHIR version, and on a version branch a version number that differs from the branch name.
+
+   A package that is not in the cache yet is downloaded by SUSHI; run the check again after step 1. Everything it reports is a finding for the report. Do not fix a dependency or a version number on your own: that is a decision for a human (see "Stop and ask").
 
 ## Step 1. SUSHI (inner loop)
 
@@ -60,14 +65,19 @@ Never edit the JSON in the repository folders by hand. The next sync overwrites 
    - **Other**: fix these. Find the cause in the FSH, then go back to step 1.
    - **Terminology, Dutch system**: the terminology server could not check a code in a Dutch code system or edition (SNOMED CT NL edition, G-Standaard, NHG, Vektis, `urn:oid:2.16.840.1.113883.2.4.*`). This is expected with MedMij material. Do not change a code to make such a message go away.
    - **Terminology, other**: read each one. A typo in a code or a system URL looks just like an unknown code.
-3. Look up every code you doubt with a terminology tool, such as a SNOMED CT tool when one is available, and show the result. Never guess a replacement code.
-4. The exit code is 1 as long as there are errors in the "Other" group.
+3. Look up the SNOMED CT codes. The summary ends with a list of the SNOMED CT codes named in the messages.
+   - When a SNOMED CT terminology tool is available (such as the SNOMED CT Terminology connector with `snomed_lookup`), look up each code in the **Netherlands edition** (terminology `snomedct-nl`), with acceptability, so you see the Dutch preferred and acceptable terms. Show for each code: active or inactive, the fully specified name with its semantic tag, and the Dutch preferred term.
+   - Use what you find to read the message correctly. "Display is no longer correct (status = inactive)" can mean the description is inactive while the concept is active. "Is a finding" depends on the semantic tag. A refset or concept that the lookup cannot find in the NL edition either confirms the message from a second source.
+   - Without such a tool, list the codes as unchecked in the report.
+   - Never pick a replacement code yourself. Show the result and ask (see "Stop and ask").
+4. Check codes from other systems that you doubt in the same way when a tool for them is available, and say so when none is.
+5. The exit code is 1 as long as there are errors in the "Other" group.
 
 ## Common causes
 
 | Message | Usual cause |
 |---|---|
-| SUSHI: `Structure Definition ... is missing a snapshot. Snapshot is required for import.` | The dependency package that holds this parent was published without snapshots, so this repository cannot be built from source. It cannot be fixed in the FSH. Do not edit `~/.fhir/packages`. Report it as a finding: name the package and version, and list the profiles, logical models and instances that SUSHI could not produce. |
+| SUSHI: `Structure Definition ... is missing a snapshot. Snapshot is required for import.` | The dependency package that holds this parent was published without snapshots, so this repository cannot be built from source. `check-repo.mjs` names the package and the StructureDefinitions. It cannot be fixed in the FSH. Do not edit `~/.fhir/packages`. Report it as a finding: name the package and version, and list the profiles, logical models and instances that SUSHI could not produce. |
 | SUSHI: `Unable to find source "X"` | A follow-on error when X itself failed to build; fix the first error. Otherwise the Mapping or Instance names X by a name that does not exist. |
 | SUSHI: an alias or canonical that cannot be resolved | The alias is missing from `Aliases.fsh`, or the package that defines it is missing from the dependencies in `sushi-config.yaml`. |
 | Validator: a profile or value set that cannot be found | The package version in `sushi-config.yaml` is not the one that defines it, or the sync was not applied. |
@@ -88,9 +98,11 @@ Never edit the JSON in the repository folders by hand. The next sync overwrites 
 
 End with:
 
+- the findings of `check-repo.mjs`: dependency packages without snapshots, and differences between `package.json` and the repository
 - the SUSHI result: errors and warnings
 - the sync: new, changed and unchanged files, files not produced by SUSHI, and whether Prettier ran
 - the validator table, each remaining error or warning in the "Other" group with the reason it was left, and the number of terminology messages with the code systems involved
+- the SNOMED CT codes you looked up and what the lookup showed, and the codes you could not check
 - the FSH files you changed and why
 - findings outside your change: a dependency package that blocks the build, committed JSON that the FSH does not reproduce, errors that were already there before your change
 

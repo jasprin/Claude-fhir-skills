@@ -26,6 +26,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { readSushiConfig } from "./lib/sushi-config.mjs";
 
 const argv = process.argv.slice(2);
 const dashdash = argv.indexOf("--");
@@ -48,41 +49,7 @@ function fail(msg) {
 
 if (!fs.existsSync(configPath)) fail(`no fsh/sushi-config.yaml in ${repo}. Pass --repo <root of the data service repository>.`);
 
-// --- sushi-config.yaml: fhirVersion and dependencies -------------------------
-// A small reader for the two keys we need, so the script has no npm dependencies.
-// Supports "pkg: 1.0.0" and the long form "pkg:\n    version: 1.0.0".
-function readConfig(text) {
-  const lines = text.split(/\r?\n/);
-  let fhirVersion = "4.0.1";
-  const deps = [];
-  let inDeps = false;
-  let current;
-  for (const raw of lines) {
-    const line = raw.replace(/\s+#.*$/, "");
-    if (!line.trim()) continue;
-    const indent = line.match(/^\s*/)[0].length;
-    if (indent === 0) {
-      inDeps = /^dependencies\s*:/.test(line);
-      const fv = line.match(/^fhirVersion\s*:\s*(.+)$/);
-      if (fv) fhirVersion = fv[1].trim().replace(/^\[|\]$/g, "").split(",")[0].trim().replace(/['"]/g, "");
-      current = undefined;
-      continue;
-    }
-    if (!inDeps) continue;
-    const kv = line.trim().match(/^([^:]+):\s*(.*)$/);
-    if (!kv) continue;
-    const [, key, value] = kv;
-    if (current && indent > current.indent) {
-      if (key === "version") current.dep.version = value.replace(/['"]/g, "");
-      continue;
-    }
-    const dep = { id: key.trim().replace(/['"]/g, ""), version: value.replace(/['"]/g, "") || undefined };
-    deps.push(dep);
-    current = { indent, dep };
-  }
-  return { fhirVersion, deps: deps.filter((d) => d.version) };
-}
-const config = readConfig(fs.readFileSync(configPath, "utf8"));
+const config = readSushiConfig(fs.readFileSync(configPath, "utf8"));
 
 // --- Java and the validator jar ---------------------------------------------
 const java = spawnSync("java", ["-version"], { encoding: "utf8" });
@@ -273,6 +240,27 @@ function printGroup(cat, title, limit) {
 printGroup("other", "Other messages", 60);
 printGroup("terminology-nl", "Terminology messages about Dutch code systems", 30);
 printGroup("terminology", "Other terminology messages", 30);
+// SNOMED CT codes named in warnings and errors, to look up with a terminology
+// tool. Matches "http://snomed.info/sct#123", "SNOMED CT code 123" and
+// "code '123'" in messages that mention SNOMED.
+const snomed = new Map();
+for (const r of rows) {
+  const patterns = [/snomed\.info\/sct#(\d{6,18})/g, /SNOMED CT code (\d{6,18})/g, /for code '(\d{6,18})'/g];
+  const relevant = /snomed/i.test(r.text) || /for code '\d+'/.test(r.text);
+  for (const re of patterns) {
+    if (!relevant && re !== patterns[0]) continue;
+    for (const m of r.text.matchAll(re)) {
+      if (!snomed.has(m[1])) snomed.set(m[1], new Set());
+      snomed.get(m[1]).add(r.file);
+    }
+  }
+}
+if (snomed.size) {
+  line("## SNOMED CT codes in these messages (look them up in the Netherlands edition)");
+  for (const [code, files] of snomed) line(`- ${code}  (${files.size} file(s))`);
+  line();
+}
+
 line(`Full output: ${outFile}`);
 if (fs.existsSync(htmlFile)) line(`HTML report: ${htmlFile}`);
 
