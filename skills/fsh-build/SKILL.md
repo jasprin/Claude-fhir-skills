@@ -68,7 +68,9 @@ Never edit the JSON in the repository folders by hand. The next sync overwrites 
 3. Look up the SNOMED CT codes. The summary ends with a list of the SNOMED CT codes named in the messages.
    - When a SNOMED CT terminology tool is available (such as the SNOMED CT Terminology connector with `snomed_lookup`), look up each code in the **Netherlands edition** (terminology `snomedct-nl`), with acceptability, so you see the Dutch preferred and acceptable terms. Show for each code: active or inactive, the fully specified name with its semantic tag, and the Dutch preferred term.
    - Use what you find to read the message correctly. "Display is no longer correct (status = inactive)" can mean the description is inactive while the concept is active. "Is a finding" depends on the semantic tag. A refset or concept that the lookup cannot find in the NL edition either confirms the message from a second source.
-   - Without such a tool, list the codes as unchecked in the report.
+   - Without such a tool, run `node <this skill>/scripts/lookup-snomed.mjs <code> [<code> ...]`. It asks tx.fhir.org, the server the validator already uses, for the same codes in the NL edition, and sends nothing but the codes. It gives active or inactive, the Dutch preferred term, the semantic tag and the parents. It also lists all descriptions, but the server does not say which of those are preferred, acceptable or inactive: never present one of them as the preferred term, and say in the report that the lookup came from tx.fhir.org.
+   - If neither works, for example without a network connection, list the codes as unchecked in the report.
+   - Never describe a code from memory: not its meaning, its semantic tag, its status or its terms. Only state what a lookup in this run returned.
    - Never pick a replacement code yourself. Show the result and ask (see "Stop and ask").
 4. Check codes from other systems that you doubt in the same way when a tool for them is available, and say so when none is.
 5. The exit code is 1 as long as there are errors in the "Other" group.
@@ -102,7 +104,7 @@ End with:
 - the SUSHI result: errors and warnings
 - the sync: new, changed and unchanged files, files not produced by SUSHI, and whether Prettier ran
 - the validator table, each remaining error or warning in the "Other" group with the reason it was left, and the number of terminology messages with the code systems involved
-- the SNOMED CT codes you looked up and what the lookup showed, and the codes you could not check
+- the SNOMED CT codes you looked up, with which tool, and what the lookup showed, and the codes you could not check
 - the FSH files you changed and why
 - findings outside your change: a dependency package that blocks the build, committed JSON that the FSH does not reproduce, errors that were already there before your change
 
